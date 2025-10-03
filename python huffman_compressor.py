@@ -1,0 +1,221 @@
+"""
+Huffman Coding Compressor and Decompressor
+
+This script implements the Huffman coding algorithm, a widely used method
+for lossless data compression. It demonstrates the use of priority queues
+(via the heapq module) and tree traversal algorithms to achieve optimal
+prefix codes for a given set of input data.
+
+The project is completely self-contained and uses only built-in Python modules.
+
+Usage:
+    python huffman_compressor.py
+    (Run directly to see the compression and decompression of sample text.)
+"""
+
+import heapq
+from collections import Counter
+from typing import Dict, Any, Optional, List, Tuple
+
+class HuffmanNode:
+    """
+    A simple node structure for the Huffman Tree.
+    Nodes store the character (if a leaf) and its frequency.
+    """
+    def __init__(self, char: Optional[str], freq: int):
+        self.char = char  # Character (None for internal nodes)
+        self.freq = freq  # Frequency or combined frequency
+        self.left: Optional[HuffmanNode] = None
+        self.right: Optional[HuffmanNode] = None
+
+    # Enable comparison for use in the priority queue (min-heap)
+    def __lt__(self, other: 'HuffmanNode') -> bool:
+        """Comparison based on frequency for the heapq."""
+        return self.freq < other.freq
+
+def build_frequency_map(text: str) -> Dict[str, int]:
+    """
+    Calculates the frequency of each character in the input text.
+    """
+    return dict(Counter(text))
+
+def build_huffman_tree(freq_map: Dict[str, int]) -> Optional[HuffmanNode]:
+    """
+    Constructs the Huffman Tree using a min-heap (priority queue).
+    """
+    # Create a list of leaf nodes (priority queue)
+    priority_queue: List[HuffmanNode] = []
+    for char, freq in freq_map.items():
+        heapq.heappush(priority_queue, HuffmanNode(char, freq))
+
+    # Handle edge case where input text is empty or contains only one unique character
+    if len(priority_queue) == 0:
+        return None
+    if len(priority_queue) == 1:
+        # If only one character, create a parent node for proper code generation
+        node = heapq.heappop(priority_queue)
+        new_node = HuffmanNode(None, node.freq)
+        new_node.left = node # Assign the single node as a child
+        return new_node
+        
+    # Build the tree
+    while len(priority_queue) > 1:
+        # Pop the two nodes with the lowest frequencies
+        left = heapq.heappop(priority_queue)
+        right = heapq.heappop(priority_queue)
+
+        # Create a new internal node
+        merged_node = HuffmanNode(None, left.freq + right.freq)
+        merged_node.left = left
+        merged_node.right = right
+
+        # Push the new node back onto the heap
+        heapq.heappush(priority_queue, merged_node)
+
+    # The last element in the queue is the root of the Huffman Tree
+    return priority_queue[0]
+
+def build_huffman_codes(root: Optional[HuffmanNode]) -> Dict[str, str]:
+    """
+    Traverses the Huffman Tree to generate the binary codes for each character.
+    Left traversal = '0', Right traversal = '1'.
+    """
+    codes: Dict[str, str] = {}
+    
+    def traverse(node: Optional[HuffmanNode], current_code: str):
+        if node is None:
+            return
+
+        # If it's a leaf node, assign the code
+        if node.char is not None:
+            # Handle the single-character edge case (code is always '0')
+            if not current_code and root and root.left == node:
+                 codes[node.char] = '0'
+            else:
+                codes[node.char] = current_code
+            return
+
+        # Traverse left (add '0')
+        traverse(node.left, current_code + "0")
+        # Traverse right (add '1')
+        traverse(node.right, current_code + "1")
+
+    # Start traversal from the root with an empty string
+    traverse(root, "")
+    
+    # Handle single-character input case where traversal might result in empty code
+    if root and root.char is not None:
+        codes[root.char] = '0' # Assign a fixed code '0' for single-char input
+    elif root and len(codes) == 0 and root.left and root.left.char is not None:
+         # Fallback for the special single node tree structure
+         codes[root.left.char] = '0' 
+
+    return codes
+
+def compress(text: str) -> Tuple[str, Dict[str, str]]:
+    """
+    Compresses the input text using Huffman coding.
+    
+    Returns:
+        Tuple[str, Dict[str, str]]: The compressed binary string and the Huffman code map.
+    """
+    if not text:
+        return "", {}
+
+    freq_map = build_frequency_map(text)
+    root = build_huffman_tree(freq_map)
+    huffman_codes = build_huffman_codes(root)
+
+    # Convert the original text into the compressed binary string
+    compressed_data = "".join(huffman_codes[char] for char in text)
+    
+    return compressed_data, huffman_codes
+
+def decompress(compressed_data: str, huffman_codes: Dict[str, str]) -> str:
+    """
+    Decompresses the binary string back to the original text.
+    
+    Args:
+        compressed_data (str): The binary string generated by compression.
+        huffman_codes (Dict[str, str]): The code map used for compression.
+        
+    Returns:
+        str: The original, decompressed text.
+    """
+    if not compressed_data or not huffman_codes:
+        return ""
+
+    # Reverse the codes map for easy lookup: code -> char
+    reverse_codes: Dict[str, str] = {code: char for char, code in huffman_codes.items()}
+
+    # Check if there is only one code (single unique character input)
+    if len(reverse_codes) == 1:
+        # Reconstruct based on the length of the binary string
+        char = list(reverse_codes.values())[0]
+        # In this edge case, the compressed data is a sequence of the single code ('0')
+        # Total length of compressed data / length of the code ('0') = number of characters
+        char_count = len(compressed_data) // len(list(reverse_codes.keys())[0])
+        return char * char_count
+
+    decompressed_text = []
+    current_code = ""
+    
+    for bit in compressed_data:
+        current_code += bit
+        if current_code in reverse_codes:
+            char = reverse_codes[current_code]
+            decompressed_text.append(char)
+            current_code = "" # Reset for the next character
+
+    return "".join(decompressed_text)
+
+def main():
+    """Demonstrates the compression and decompression process."""
+    
+    sample_text = "this is a simple example for huffman coding algorithm"
+    
+    print("--- Huffman Coding Demonstration ---")
+    print(f"Original Text: '{sample_text}'")
+    print(f"Original Length (bits, assuming 8 bits/char): {len(sample_text) * 8} bits")
+    print("-" * 50)
+    
+    # 1. Compression
+    compressed_data, codes = compress(sample_text)
+    
+    if not compressed_data:
+        print("Error: Compression failed for empty text.")
+        return
+
+    # 2. Results
+    print("Huffman Codes (Character -> Code):")
+    # Sort for consistent display
+    for char, code in sorted(codes.items()):
+        print(f"  '{char}': {code}")
+        
+    print("-" * 50)
+    print(f"Compressed Binary Data: {compressed_data[:80]}...")
+    print(f"Compressed Length: {len(compressed_data)} bits")
+    
+    # Calculate compression ratio
+    original_bits = len(sample_text) * 8
+    compressed_bits = len(compressed_data)
+    compression_ratio = (1 - (compressed_bits / original_bits)) * 100
+    
+    print(f"Compression Ratio: {compression_ratio:.2f}% reduction")
+    
+    print("-" * 50)
+    
+    # 3. Decompression
+    decompressed_text = decompress(compressed_data, codes)
+    
+    print(f"Decompressed Text: '{decompressed_text}'")
+    
+    # 4. Verification
+    if decompressed_text == sample_text:
+        print("\nSUCCESS: Decompressed text matches original text.")
+    else:
+        print("\nFAILURE: Decompressed text does NOT match original text.")
+
+
+if __name__ == "__main__":
+    main()
